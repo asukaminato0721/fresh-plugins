@@ -1,0 +1,14 @@
+{
+  "$schema": "https://fresh-editor.dev/schemas/package.schema.json",
+  "name": "adwaita",
+  "version": "1.0.0",
+  "description": "Adwaita theme variants (Light, Dark) - the default GNOME desktop theme",
+  "type": "theme",
+  "author": "Noam Lewis",
+  "license": "MIT",
+  "repository": "https://github.com/sinelaw/fresh-plugins",
+  "keywords": ["theme", "adwaita", "gnome", "gtk", "dark", "light"],
+  "fresh": {
+    "min_version": "0.1.0"
+  }
+}
