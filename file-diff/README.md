@@ -4,16 +4,18 @@ Side-by-side diff of **any two files on disk**. The baseline is a second file
 you pick rather than a git revision, so it works on untracked files, scratch
 notes, backups, config copies — anything, inside a repository or not.
 
+## Install
+
+From the command palette (Ctrl+P), run **`Package: Install from URL`** and give
+it the repository with this plugin's subdirectory as the fragment:
+
 ```
-[ config.toml ][ config.toml.bak ]  4 changes          [ Swap ][ Refresh ][ Close ]
-────────────────────────────────────────────────────────────────────────────────
- /etc/app/config.toml                  │ /home/me/config.toml.bak
-   1 [server]                          │   1 [server]
-   2 port = 8080                       │   2 port = 9090
+https://github.com/sinelaw/fresh-plugins#file-diff
 ```
 
-The two file names in the header are buttons: click one to replace that side
-with a file chosen from the editor's file browser.
+Or install it from the registry: run **`Package: Packages`**, find `file-diff`
+in the list, and install it there — same package, and the browser shows what
+else is available.
 
 ## Features
 
@@ -27,6 +29,17 @@ with a file chosen from the editor's file browser.
   currently stand, including edits you've made in the editor
 
 ## Usage
+
+```
+[ config.toml ][ config.toml.bak ]  4 changes          [ Swap ][ Refresh ][ Close ]
+────────────────────────────────────────────────────────────────────────────────
+ /etc/app/config.toml                  │ /home/me/config.toml.bak
+   1 [server]                          │   1 [server]
+   2 port = 8080                       │   2 port = 9090
+```
+
+The two file names in the header are buttons: click one to replace that side
+with a file chosen from the editor's file browser.
 
 Run **`Diff: Compare Two Files`** from the command palette (Ctrl+P) and pick
 two files, or **`Diff: Compare Current File With`** to diff the file you're in
