@@ -1,0 +1,16 @@
+{
+  "$schema": "https://fresh-editor.dev/schemas/package.schema.json",
+  "name": "file-diff",
+  "version": "1.0.0",
+  "description": "Side-by-side diff of any two files on disk — no git, no repository required",
+  "type": "plugin",
+  "author": "Fresh Editor Team",
+  "license": "MIT",
+  "repository": "https://github.com/sinelaw/fresh-plugins",
+  "keywords": ["diff", "compare", "files", "side-by-side"],
+  "fresh": {
+    "min_version": "0.4.9",
+    "min_api_version": 2,
+    "entry": "file_diff.ts"
+  }
+}
