@@ -1,0 +1,15 @@
+# TLS reverse proxy
+events { worker_connections 1024; }
+http {
+  upstream backend {
+    server 127.0.0.1:8080;
+  }
+  server {
+    listen 443 ssl;
+    location ~* \.(?:css|js)$ {
+      proxy_set_header Host $host;
+      proxy_pass http://backend;
+      add_header X-Trace "$request_id";
+    }
+  }
+}

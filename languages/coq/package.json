@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/master/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "coq",
+  "version": "0.1.0",
+  "description": "Coq/Rocq syntax highlighting, from Fresh PR #3026 by asukaminato0721",
+  "type": "language",
+  "author": "asukaminato0721",
+  "license": "GPL-2.0-only",
+  "keywords": [
+    "coq",
+    "rocq",
+    "proof-assistant"
+  ],
+  "fresh": {
+    "grammar": {
+      "file": "grammars/coq.sublime-syntax",
+      "extensions": [
+        "coq"
+      ]
+    },
+    "language": {
+      "blockCommentStart": "(*",
+      "blockCommentEnd": "*)",
+      "tabSize": 2,
+      "useTabs": false,
+      "autoIndent": true
+    }
+  }
+}

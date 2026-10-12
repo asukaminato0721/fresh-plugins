@@ -1,0 +1,11 @@
+; prove a small arithmetic constraint
+(set-logic QF_LIA)
+(set-option :produce-models true)
+(declare-const x Int)
+(declare-fun bounded (Int) Bool)
+(assert (! (and (> x 10) (bounded x)) :named |main constraint|))
+(assert (= #b1010 #x0A))
+(assert (= ((_ extract 3 0) #b1010) (_ bv10 4)))
+(echo "quote: ""ok""")
+(check-sat)
+(get-model)

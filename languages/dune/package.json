@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/master/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "dune",
+  "version": "0.1.0",
+  "description": "Dune syntax highlighting, from Fresh PR #3026 by asukaminato0721",
+  "type": "language",
+  "author": "asukaminato0721",
+  "license": "GPL-2.0-only",
+  "keywords": [
+    "dune",
+    "ocaml",
+    "build-system"
+  ],
+  "fresh": {
+    "grammar": {
+      "file": "grammars/dune.sublime-syntax",
+      "extensions": [
+        "dune"
+      ]
+    },
+    "language": {
+      "commentPrefix": ";",
+      "blockCommentStart": "#|",
+      "blockCommentEnd": "|#",
+      "tabSize": 2,
+      "useTabs": false,
+      "autoIndent": true
+    }
+  }
+}

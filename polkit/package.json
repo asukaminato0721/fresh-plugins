@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/master/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "polkit",
+  "version": "0.1.0",
+  "description": "JavaScript syntax highlighting for polkit rules.d files",
+  "type": "plugin",
+  "author": "asukaminato0721",
+  "license": "MIT",
+  "keywords": [
+    "polkit",
+    "javascript",
+    "rules"
+  ],
+  "fresh": {
+    "entry": "polkit.ts"
+  }
+}

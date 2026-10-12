@@ -1,0 +1,6 @@
+// Example only. This file is not installed as a system policy.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.example.inspect" && subject.local) {
+        return polkit.Result.AUTH_ADMIN;
+    }
+});

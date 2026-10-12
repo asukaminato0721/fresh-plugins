@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/master/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "nginx",
+  "version": "0.1.0",
+  "description": "Nginx syntax highlighting, from Fresh PR #3026 by asukaminato0721",
+  "type": "language",
+  "author": "asukaminato0721",
+  "license": "GPL-2.0-only",
+  "keywords": [
+    "nginx",
+    "configuration",
+    "web-server"
+  ],
+  "fresh": {
+    "grammar": {
+      "file": "grammars/nginx.sublime-syntax",
+      "extensions": [
+        "nginx"
+      ]
+    },
+    "language": {
+      "commentPrefix": "#",
+      "tabSize": 4,
+      "useTabs": false,
+      "autoIndent": true
+    }
+  }
+}

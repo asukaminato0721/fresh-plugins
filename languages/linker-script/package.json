@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/master/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "linker-script",
+  "version": "0.1.0",
+  "description": "GNU linker script syntax highlighting",
+  "type": "language",
+  "author": "asukaminato0721",
+  "license": "MIT",
+  "keywords": [
+    "linker",
+    "ld",
+    "lds",
+    "embedded"
+  ],
+  "fresh": {
+    "grammar": {
+      "file": "grammars/linker-script.sublime-syntax",
+      "extensions": [
+        "ld",
+        "lds"
+      ]
+    },
+    "language": {
+      "blockCommentStart": "/*",
+      "blockCommentEnd": "*/",
+      "tabSize": 2,
+      "useTabs": false,
+      "autoIndent": true
+    }
+  }
+}
