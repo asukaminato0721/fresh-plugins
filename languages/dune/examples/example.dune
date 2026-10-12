@@ -1,0 +1,6 @@
+(library
+ (name example)
+ (libraries unix)
+ (flags (:standard -w +a-4-9)))
+(rule
+ (action (run %{bin:tool} --version)))

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/master/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "smtlib2",
+  "version": "0.1.0",
+  "description": "SMT-LIB 2 syntax highlighting, from Fresh PR #3026 by asukaminato0721",
+  "type": "language",
+  "author": "asukaminato0721",
+  "license": "GPL-2.0-only",
+  "keywords": [
+    "smtlib2",
+    "smt2",
+    "smt",
+    "z3"
+  ],
+  "fresh": {
+    "grammar": {
+      "file": "grammars/smtlib2.sublime-syntax",
+      "extensions": [
+        "smt2"
+      ]
+    },
+    "language": {
+      "commentPrefix": ";",
+      "tabSize": 2,
+      "useTabs": false,
+      "autoIndent": true
+    }
+  }
+}

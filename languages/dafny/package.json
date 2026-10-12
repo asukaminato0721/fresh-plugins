@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/master/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "dafny",
+  "version": "0.1.0",
+  "description": "Dafny syntax highlighting, from Fresh PR #3026 by asukaminato0721",
+  "type": "language",
+  "author": "asukaminato0721",
+  "license": "GPL-2.0-only",
+  "keywords": [
+    "dafny",
+    "verification"
+  ],
+  "fresh": {
+    "grammar": {
+      "file": "grammars/dafny.sublime-syntax",
+      "extensions": [
+        "dfy"
+      ]
+    },
+    "language": {
+      "commentPrefix": "//",
+      "blockCommentStart": "/*",
+      "blockCommentEnd": "*/",
+      "tabSize": 4,
+      "useTabs": false,
+      "autoIndent": true
+    }
+  }
+}
