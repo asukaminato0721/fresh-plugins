@@ -1,0 +1,52 @@
+%YAML 1.2
+---
+# OpenSSH client configuration: https://man.openbsd.org/ssh_config
+name: ssh-config
+file_extensions: [ssh_config]
+scope: source.ssh-config
+contexts:
+  main:
+    - match: '^\s*(#).*$'
+      scope: comment.line.number-sign.ssh-config
+      captures:
+        1: punctuation.definition.comment.ssh-config
+    - match: '^\s*((?i:Host|Match))\b'
+      captures:
+        1: keyword.control.ssh-config
+      push: arguments
+    - match: '^\s*([A-Za-z][A-Za-z0-9]*)\b'
+      captures:
+        1: keyword.other.ssh-config
+      push: arguments
+  arguments:
+    - match: '$'
+      pop: true
+    - match: '"'
+      scope: punctuation.definition.string.begin.ssh-config
+      push: quoted
+    - match: '(?i)\b(?:yes|no|ask|confirm|accept-new|none|any|auto)\b'
+      scope: constant.language.ssh-config
+    - match: '\b[0-9]+\b'
+      scope: constant.numeric.ssh-config
+    - match: '='
+      scope: keyword.operator.assignment.ssh-config
+    - include: substitutions
+    - match: '[!*?]'
+      scope: keyword.operator.pattern.ssh-config
+    - match: '[^\s"%=!*?$]+'
+      scope: string.unquoted.ssh-config
+  quoted:
+    - meta_scope: string.quoted.double.ssh-config
+    - match: '\\.'
+      scope: constant.character.escape.ssh-config
+    - match: '"'
+      scope: punctuation.definition.string.end.ssh-config
+      pop: true
+    - match: '$'
+      pop: true
+    - include: substitutions
+  substitutions:
+    - match: '%[%CdfHhIijkKLlnprTtu]'
+      scope: constant.other.placeholder.ssh-config
+    - match: '\$\{[A-Za-z_][A-Za-z0-9_]*\}'
+      scope: variable.other.environment.ssh-config

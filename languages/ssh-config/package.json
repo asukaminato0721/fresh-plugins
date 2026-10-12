@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/master/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "ssh-config",
+  "version": "0.1.0",
+  "description": "OpenSSH client configuration syntax highlighting and file detection",
+  "type": "bundle",
+  "author": "asukaminato0721",
+  "license": "MIT",
+  "keywords": [
+    "ssh",
+    "openssh",
+    "config"
+  ],
+  "fresh": {
+    "languages": [
+      {
+        "id": "ssh-config",
+        "grammar": {
+          "file": "grammars/ssh-config.sublime-syntax",
+          "extensions": [
+            "ssh_config"
+          ],
+          "shortName": "ssh-config"
+        },
+        "language": {
+          "commentPrefix": "#",
+          "tabSize": 4,
+          "useTabs": false,
+          "autoIndent": true
+        }
+      }
+    ],
+    "plugins": [
+      {
+        "entry": "plugins/ssh-config.ts"
+      }
+    ]
+  }
+}

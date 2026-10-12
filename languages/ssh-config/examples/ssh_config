@@ -1,0 +1,15 @@
+# Example OpenSSH client configuration
+Include ~/.ssh/config.d/*.conf
+Host build-* !build-old
+    HostName example.org
+    User builder
+    Port 2222
+    IdentityFile "${HOME}/.ssh/id_ed25519"
+    ControlPath ~/.ssh/control-%r@%h:%p
+    StrictHostKeyChecking accept-new
+Match host *.example.org user builder
+    ForwardAgent no
+Host quoted
+    ProxyCommand "ssh -W %h:%p gateway"
+    HostName="example.net"
+    UserKnownHostsFile ~/.ssh/${USER}_known_hosts
