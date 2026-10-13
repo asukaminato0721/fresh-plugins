@@ -18,8 +18,20 @@ test("short files keep one map row per source line", () => {
   assert.equal(rowForLine(1, map.length, 3), 1);
 });
 
-test("source shape keeps indentation and fits the sidebar", () => {
-  assert.equal(miniature("    abc(def)", 20).startsWith("  ━"), true);
+test("source shape keeps indentation and fits the map width", () => {
+  assert.equal(miniature("    abc(def)", 20).startsWith("  █"), true);
   assert.equal(miniature("x".repeat(100), 20).length, 20);
   assert.equal(miniature("   "), " ");
+});
+
+test("a map row includes sparse and dense source lines", () => {
+  const map = buildMinimap("x\n\n\n\n\n\nxxxxxxxx", 2, 4);
+  assert.equal(map.length, 2);
+  assert.match(map[0].text, /░|▒|▓/);
+  assert.match(map[1].text, /█/);
+});
+
+test("sample byte offsets account for non-ASCII source", () => {
+  const map = buildMinimap("é\nhello", 2);
+  assert.equal(map[1].sampleStartByte, 3);
 });
