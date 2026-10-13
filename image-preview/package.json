@@ -1,0 +1,55 @@
+{
+  "$schema": "https://fresh-editor.dev/schemas/package.schema.json",
+  "name": "image-preview",
+  "version": "0.1.0",
+  "description": "Preview images with theme-aware colors using Chafa or ImageMagick",
+  "type": "plugin",
+  "author": "asukaminato0721",
+  "license": "MIT",
+  "repository": "https://github.com/asukaminato0721/fresh-plugins#image-preview",
+  "keywords": ["image", "preview", "png", "jpeg", "chafa"],
+  "fresh": {
+    "min_version": "0.5.3",
+    "min_api_version": 2,
+    "entry": "image-preview.ts",
+    "config_schema": {
+      "type": "object",
+      "properties": {
+        "autoOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Preview raster images when opened."
+        },
+        "renderer": {
+          "type": "string",
+          "enum": ["auto", "chafa", "imagemagick"],
+          "default": "auto",
+          "description": "Auto tries Chafa, then ImageMagick."
+        },
+        "chafaCommand": {
+          "type": "string",
+          "default": "chafa",
+          "description": "Chafa executable name or absolute path."
+        },
+        "magickCommand": {
+          "type": "string",
+          "description": "ImageMagick executable. Auto tries magick, then convert when omitted."
+        },
+        "maxWidth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 400,
+          "default": 200,
+          "description": "Maximum image width in character cells."
+        },
+        "maxHeight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 100,
+          "description": "Maximum image height in character cells."
+        }
+      }
+    }
+  }
+}
