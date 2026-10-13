@@ -2,8 +2,10 @@ import {
   type ChangedFile,
   type Commit,
   fileRevisions,
+  mergeChangedFiles,
   parseChangedFiles,
   parseCommits,
+  parsePaths,
 } from "./lib/review_git.ts";
 
 const editor = getEditor();
@@ -12,9 +14,14 @@ const TREE_KEY = "review-tree";
 const PANEL_ROWS = 32;
 
 type TreeItem =
+  | { kind: "workspace" }
+  | { kind: "work-group"; group: WorkGroup }
+  | { kind: "work-file"; group: WorkGroup; file: ChangedFile }
   | { kind: "commit"; commit: Commit }
   | { kind: "file"; commit: Commit; file: ChangedFile }
   | { kind: "loading"; commit: Commit };
+
+type WorkGroup = "unstaged" | "staged";
 
 interface DiffView {
   compositeId: number;
@@ -28,6 +35,8 @@ let mounted = false;
 let repoRoot: string | null = null;
 let ownerWindow: number | null = null;
 let commits: Commit[] = [];
+let unstagedFiles: ChangedFile[] = [];
+let stagedFiles: ChangedFile[] = [];
 let treeItems: TreeItem[] = [];
 let selectedKey: string | null = null;
 let expanded = new Set<string>();
@@ -44,6 +53,14 @@ function commitKey(commit: Commit): string {
 
 function fileKey(commit: Commit, file: ChangedFile): string {
   return `file:${commit.hash}:${file.path}`;
+}
+
+function workGroupKey(group: WorkGroup): string {
+  return `work-group:${group}`;
+}
+
+function workFileKey(group: WorkGroup, file: ChangedFile): string {
+  return `work-file:${group}:${file.path}`;
 }
 
 function statusColor(status: string): OverlayColorSpec {
@@ -84,6 +101,48 @@ function buildTree(): { nodes: TreeNode[]; keys: string[]; items: TreeItem[] } {
   const nodes: TreeNode[] = [];
   const keys: string[] = [];
   const items: TreeItem[] = [];
+  const workCount = unstagedFiles.length + stagedFiles.length;
+  nodes.push({
+    text: {
+      text: "",
+      segments: [
+        { text: "Working Changes", style: { bold: true } },
+        { text: `  ${workCount}`, style: { fg: "syntax.comment" } },
+      ],
+    },
+    depth: 0,
+    hasChildren: workCount > 0,
+  });
+  keys.push("workspace");
+  items.push({ kind: "workspace" });
+
+  for (
+    const [group, label, files] of [
+      ["unstaged", "Changes", unstagedFiles],
+      ["staged", "Staged Changes", stagedFiles],
+    ] as const
+  ) {
+    if (files.length === 0) continue;
+    nodes.push({
+      text: {
+        text: "",
+        segments: [
+          { text: label },
+          { text: `  ${files.length}`, style: { fg: "syntax.comment" } },
+        ],
+      },
+      depth: 1,
+      hasChildren: true,
+    });
+    keys.push(workGroupKey(group));
+    items.push({ kind: "work-group", group });
+    for (const file of files) {
+      nodes.push({ text: fileEntry(file), depth: 2, hasChildren: false });
+      keys.push(workFileKey(group, file));
+      items.push({ kind: "work-file", group, file });
+    }
+  }
+
   for (const commit of commits) {
     nodes.push({ text: commitEntry(commit), depth: 0, hasChildren: true });
     keys.push(commitKey(commit));
@@ -137,7 +196,7 @@ function publish(): void {
   if (!open) return;
   const spec = panelSpec();
   if (!mounted) {
-    editor.mountSidebarSection(PANEL_ID, spec, "Commit Review", PANEL_ROWS, {
+    editor.mountSidebarSection(PANEL_ID, spec, "Git Review", PANEL_ROWS, {
       closable: true,
       startBlurred: false,
       scope: ownerWindow === null ? "editor" : { window: ownerWindow },
@@ -181,6 +240,8 @@ function closeReview(): void {
   repoRoot = null;
   ownerWindow = null;
   commits = [];
+  unstagedFiles = [];
+  stagedFiles = [];
   treeItems = [];
   selectedKey = null;
   expanded = new Set<string>();
@@ -217,7 +278,7 @@ async function loadFiles(commit: Commit): Promise<void> {
   loadingCommits.delete(commit.hash);
   if (result.exit_code !== 0) {
     editor.setStatus(
-      `Commit Review: ${result.stderr.trim() || "Cannot read commit"}`,
+      `Git Review: ${result.stderr.trim() || "Cannot read commit"}`,
     );
     publish();
     return;
@@ -226,30 +287,81 @@ async function loadFiles(commit: Commit): Promise<void> {
   publish();
 }
 
-async function loadCommits(): Promise<void> {
+function repoRelativePath(path: string): string | null {
+  if (repoRoot === null) return null;
+  for (const separator of ["/", "\\"]) {
+    const prefix = `${repoRoot}${separator}`;
+    if (path.startsWith(prefix)) {
+      return path.slice(prefix.length).replaceAll("\\", "/");
+    }
+  }
+  return null;
+}
+
+function modifiedBufferFiles(): ChangedFile[] {
+  return editor.listBuffers()
+    .filter((buffer) => buffer.modified && !buffer.is_virtual && buffer.path)
+    .flatMap((buffer) => {
+      const path = repoRelativePath(buffer.path);
+      if (path === null) return [];
+      return [{
+        status: editor.fileExists(buffer.path) ? "M" : "A",
+        path,
+      }];
+    });
+}
+
+async function loadReview(): Promise<void> {
   if (!open || repoRoot === null) return;
   const lifecycle = lifecycleGeneration;
   const history = ++historyGeneration;
-  const result = await git(
-    ["log", "-n", "50", "-z", "--format=%H%x00%s"],
-    repoRoot,
-  );
+  const [logResult, unstagedResult, stagedResult, untrackedResult] =
+    await Promise
+      .all([
+        git(["log", "-n", "50", "-z", "--format=%H%x00%s"], repoRoot),
+        git(["diff", "--no-renames", "--name-status", "-z"], repoRoot),
+        git([
+          "diff",
+          "--cached",
+          "--no-renames",
+          "--name-status",
+          "-z",
+        ], repoRoot),
+        git(["ls-files", "--others", "--exclude-standard", "-z"], repoRoot),
+      ]);
   if (
     !open || lifecycle !== lifecycleGeneration || history !== historyGeneration
   ) return;
-  if (result.exit_code !== 0) {
+  const failed = [unstagedResult, stagedResult, untrackedResult].find((
+    result,
+  ) => result.exit_code !== 0);
+  if (failed) {
     editor.setStatus(
-      `Commit Review: ${result.stderr.trim() || "Cannot read history"}`,
+      `Git Review: ${failed.stderr.trim() || "Cannot read working changes"}`,
     );
     return;
   }
-  commits = parseCommits(result.stdout);
-  selectedKey = commits[0] ? commitKey(commits[0]) : null;
-  expanded = new Set(commits[0] ? [commitKey(commits[0])] : []);
+  commits = logResult.exit_code === 0 ? parseCommits(logResult.stdout) : [];
+  unstagedFiles = mergeChangedFiles(
+    parseChangedFiles(unstagedResult.stdout),
+    parsePaths(untrackedResult.stdout),
+    modifiedBufferFiles(),
+  );
+  stagedFiles = mergeChangedFiles(parseChangedFiles(stagedResult.stdout));
+  const workCount = unstagedFiles.length + stagedFiles.length;
+  selectedKey = workCount > 0
+    ? "workspace"
+    : commits[0]
+    ? commitKey(commits[0])
+    : "workspace";
+  expanded = new Set(["workspace"]);
+  if (unstagedFiles.length > 0) expanded.add(workGroupKey("unstaged"));
+  if (stagedFiles.length > 0) expanded.add(workGroupKey("staged"));
+  if (workCount === 0 && commits[0]) expanded.add(commitKey(commits[0]));
   filesByCommit.clear();
   loadingCommits.clear();
   publish();
-  if (commits[0]) await loadFiles(commits[0]);
+  if (workCount === 0 && commits[0]) await loadFiles(commits[0]);
 }
 
 async function openReview(): Promise<void> {
@@ -264,14 +376,14 @@ async function openReview(): Promise<void> {
   if (lifecycle !== lifecycleGeneration) return;
   opening = false;
   if (result.exit_code !== 0) {
-    editor.setStatus("Commit Review: Open a file in a Git repository");
+    editor.setStatus("Git Review: Open a file in a Git repository");
     return;
   }
   repoRoot = result.stdout.trim();
   ownerWindow = info?.window_id ?? null;
   open = true;
   publish();
-  await loadCommits();
+  await loadReview();
 }
 
 function normalizedContent(content: string): string {
@@ -295,7 +407,7 @@ function byteLength(text: string): number {
 
 function startTask(task: Promise<void>): void {
   void task.catch((error: unknown) => {
-    editor.setStatus(`Commit Review: ${String(error)}`);
+    editor.setStatus(`Git Review: ${String(error)}`);
   });
 }
 
@@ -317,39 +429,24 @@ async function readRevision(
   return await git(["show", revision], repoRoot);
 }
 
-async function openFileDiff(commit: Commit, file: ChangedFile): Promise<void> {
-  if (!open || repoRoot === null) return;
-  const lifecycle = lifecycleGeneration;
-  const generation = ++diffGeneration;
-  selectedKey = fileKey(commit, file);
-  publish();
-
-  const revisions = fileRevisions(commit.hash, file);
-  const [oldResult, newResult] = await Promise.all([
-    readRevision(revisions.oldRevision),
-    readRevision(revisions.newRevision),
-  ]);
-  if (
-    !open || lifecycle !== lifecycleGeneration || generation !== diffGeneration
-  ) return;
-  if (
-    (oldResult && oldResult.exit_code !== 0) ||
-    (newResult && newResult.exit_code !== 0)
-  ) {
-    const message = oldResult?.stderr.trim() || newResult?.stderr.trim() ||
-      "Cannot read file versions";
-    editor.setStatus(`Commit Review: ${message}`);
-    return;
-  }
-
-  const oldContent = normalizedContent(oldResult?.stdout ?? "");
-  const newContent = normalizedContent(newResult?.stdout ?? "");
+async function showDiff(
+  file: ChangedFile,
+  oldContentValue: string,
+  newContentValue: string,
+  oldLabel: string,
+  newLabel: string,
+  viewName: string,
+  lifecycle: number,
+  generation: number,
+): Promise<void> {
+  const oldContent = normalizedContent(oldContentValue);
+  const newContent = normalizedContent(newContentValue);
   if (oldContent.includes("\0") || newContent.includes("\0")) {
-    editor.setStatus(`Commit Review: ${file.path} is a binary file`);
+    editor.setStatus(`Git Review: ${file.path} is a binary file`);
     return;
   }
   const oldBuffer = await editor.createVirtualBuffer({
-    name: `*${commit.hash.slice(0, 7)}^:${file.path}*`,
+    name: `*${oldLabel}*`,
     mode: "normal",
     readOnly: true,
     editingDisabled: true,
@@ -358,7 +455,7 @@ async function openFileDiff(commit: Commit, file: ChangedFile): Promise<void> {
     entries: [{ text: oldContent }],
   });
   const newBuffer = await editor.createVirtualBuffer({
-    name: `*${commit.hash.slice(0, 7)}:${file.path}*`,
+    name: `*${newLabel}*`,
     mode: "normal",
     readOnly: true,
     editingDisabled: true,
@@ -380,19 +477,19 @@ async function openFileDiff(commit: Commit, file: ChangedFile): Promise<void> {
     newContent,
   );
   const compositeId = await editor.createCompositeBuffer({
-    name: `*${commit.hash.slice(0, 7)} ${file.path}*`,
+    name: `*${viewName}*`,
     mode: "diff-view",
     layout: { type: "side-by-side", ratios: [0.5, 0.5], showSeparator: true },
     sources: [
       {
         bufferId: oldBuffer.bufferId,
-        label: `PARENT · ${file.path}`,
+        label: oldLabel,
         editable: false,
         style: { gutterStyle: "both" },
       },
       {
         bufferId: newBuffer.bufferId,
-        label: `${commit.hash.slice(0, 7)} · ${file.path}`,
+        label: newLabel,
         editable: false,
         style: { gutterStyle: "both" },
       },
@@ -420,6 +517,121 @@ async function openFileDiff(commit: Commit, file: ChangedFile): Promise<void> {
   editor.setStatus(`${file.status} ${file.path} · n/p: next/previous change`);
 }
 
+async function openFileDiff(commit: Commit, file: ChangedFile): Promise<void> {
+  if (!open || repoRoot === null) return;
+  const lifecycle = lifecycleGeneration;
+  const generation = ++diffGeneration;
+  selectedKey = fileKey(commit, file);
+  publish();
+
+  const revisions = fileRevisions(commit.hash, file);
+  const [oldResult, newResult] = await Promise.all([
+    readRevision(revisions.oldRevision),
+    readRevision(revisions.newRevision),
+  ]);
+  if (
+    !open || lifecycle !== lifecycleGeneration || generation !== diffGeneration
+  ) return;
+  if (
+    (oldResult && oldResult.exit_code !== 0) ||
+    (newResult && newResult.exit_code !== 0)
+  ) {
+    const message = oldResult?.stderr.trim() || newResult?.stderr.trim() ||
+      "Cannot read file versions";
+    editor.setStatus(`Git Review: ${message}`);
+    return;
+  }
+  const shortHash = commit.hash.slice(0, 7);
+  await showDiff(
+    file,
+    oldResult?.stdout ?? "",
+    newResult?.stdout ?? "",
+    `PARENT · ${file.path}`,
+    `${shortHash} · ${file.path}`,
+    `${shortHash} ${file.path}`,
+    lifecycle,
+    generation,
+  );
+}
+
+async function readWorkingFile(path: string): Promise<string | null> {
+  if (repoRoot === null) return null;
+  const fullPath = editor.pathJoin(repoRoot, path);
+  const bufferId = editor.findBufferByPath(fullPath);
+  if (bufferId !== 0) return await editor.getBufferText(bufferId);
+  return editor.readFile(fullPath);
+}
+
+async function openWorkingDiff(
+  group: WorkGroup,
+  file: ChangedFile,
+): Promise<void> {
+  if (!open || repoRoot === null) return;
+  const lifecycle = lifecycleGeneration;
+  const generation = ++diffGeneration;
+  selectedKey = workFileKey(group, file);
+  publish();
+
+  if (group === "staged") {
+    const [oldResult, newResult] = await Promise.all([
+      readRevision(file.status === "A" ? null : `HEAD:${file.path}`),
+      readRevision(file.status === "D" ? null : `:${file.path}`),
+    ]);
+    if (
+      !open || lifecycle !== lifecycleGeneration ||
+      generation !== diffGeneration
+    ) return;
+    if (
+      (oldResult && oldResult.exit_code !== 0) ||
+      (newResult && newResult.exit_code !== 0)
+    ) {
+      const message = oldResult?.stderr.trim() || newResult?.stderr.trim() ||
+        "Cannot read staged versions";
+      editor.setStatus(`Git Review: ${message}`);
+      return;
+    }
+    await showDiff(
+      file,
+      oldResult?.stdout ?? "",
+      newResult?.stdout ?? "",
+      `HEAD · ${file.path}`,
+      `INDEX · ${file.path}`,
+      `Staged ${file.path}`,
+      lifecycle,
+      generation,
+    );
+    return;
+  }
+
+  const [oldResult, workingContent] = await Promise.all([
+    readRevision(file.status === "A" ? null : `:${file.path}`),
+    file.status === "D" ? Promise.resolve("") : readWorkingFile(file.path),
+  ]);
+  if (
+    !open || lifecycle !== lifecycleGeneration || generation !== diffGeneration
+  ) return;
+  if (oldResult && oldResult.exit_code !== 0) {
+    editor.setStatus(
+      `Git Review: ${oldResult.stderr.trim() || "Cannot read index version"}`,
+    );
+    return;
+  }
+  if (workingContent === null) {
+    editor.setStatus(`Git Review: ${file.path} is binary or cannot be read`);
+    return;
+  }
+  await showDiff(
+    file,
+    oldResult?.stdout ?? "",
+    workingContent,
+    `INDEX · ${file.path}`,
+    `WORKTREE · ${file.path}`,
+    `Changes ${file.path}`,
+    lifecycle,
+    generation,
+  );
+}
+
 function setExpanded(commit: Commit, value: boolean): void {
   const key = commitKey(commit);
   if (value) {
@@ -436,17 +648,17 @@ registerHandler("gitReviewToggle", () => {
   else startTask(openReview());
 });
 registerHandler("gitReviewRefresh", () => {
-  startTask(loadCommits());
+  startTask(loadReview());
 });
 editor.registerCommand(
   "Git Review: Toggle",
-  "Show or hide commit review",
+  "Show or hide Git working changes and commit history",
   "gitReviewToggle",
   null,
 );
 editor.registerCommand(
   "Git Review: Refresh",
-  "Refresh commit history",
+  "Refresh working changes and commit history",
   "gitReviewRefresh",
   null,
 );
@@ -466,26 +678,58 @@ editor.on("widget_event", (event) => {
   }
   if (event.event_type === "expand") {
     if (typeof payload.key !== "string") return;
+    const value = typeof payload.expanded === "boolean"
+      ? payload.expanded
+      : !expanded.has(payload.key);
     const commit = commits.find((candidate) =>
       commitKey(candidate) === payload.key
     );
-    if (!commit) return;
-    const value = typeof payload.expanded === "boolean"
-      ? payload.expanded
-      : !expanded.has(commitKey(commit));
-    setExpanded(commit, value);
+    if (commit) {
+      setExpanded(commit, value);
+      return;
+    }
+    if (
+      payload.key === "workspace" ||
+      payload.key === workGroupKey("unstaged") ||
+      payload.key === workGroupKey("staged")
+    ) {
+      if (value) expanded.add(payload.key);
+      else expanded.delete(payload.key);
+      publish();
+    }
     return;
   }
   if (event.event_type !== "select" && event.event_type !== "activate") return;
   if (typeof payload.index !== "number") return;
   const item = treeItems[payload.index];
   if (!item || item.kind === "loading") return;
-  selectedKey = item.kind === "commit"
-    ? commitKey(item.commit)
-    : fileKey(item.commit, item.file);
+  if (item.kind === "workspace") selectedKey = "workspace";
+  else if (item.kind === "work-group") {
+    selectedKey = workGroupKey(item.group);
+  } else if (item.kind === "work-file") {
+    selectedKey = workFileKey(item.group, item.file);
+  } else if (item.kind === "commit") selectedKey = commitKey(item.commit);
+  else selectedKey = fileKey(item.commit, item.file);
   if (item.kind === "commit") {
     if (event.event_type === "activate") {
       setExpanded(item.commit, !expanded.has(commitKey(item.commit)));
+    }
+    return;
+  }
+  if (item.kind === "workspace" || item.kind === "work-group") {
+    if (event.event_type === "activate") {
+      const key = item.kind === "workspace"
+        ? "workspace"
+        : workGroupKey(item.group);
+      if (expanded.has(key)) expanded.delete(key);
+      else expanded.add(key);
+      publish();
+    }
+    return;
+  }
+  if (item.kind === "work-file") {
+    if (event.event_type === "activate" || payload.via === "click") {
+      startTask(openWorkingDiff(item.group, item.file));
     }
     return;
   }

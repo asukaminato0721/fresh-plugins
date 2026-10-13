@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   fileRevisions,
+  mergeChangedFiles,
   parseChangedFiles,
   parseCommits,
+  parsePaths,
 } from "../lib/review_git.ts";
 
 test("commit parser keeps subjects with spaces", () => {
@@ -11,6 +13,26 @@ test("commit parser keeps subjects with spaces", () => {
   assert.deepEqual(parseCommits(`${hash}\0Fix two files\0`), [
     { hash, subject: "Fix two files" },
   ]);
+});
+
+test("working file helpers include untracked files without duplicates", () => {
+  assert.deepEqual(parsePaths("new file.ts\0src/new.ts\0"), [
+    { status: "A", path: "new file.ts" },
+    { status: "A", path: "src/new.ts" },
+  ]);
+  assert.deepEqual(
+    mergeChangedFiles(
+      [{ status: "M", path: "src/existing.ts" }],
+      [
+        { status: "A", path: "src/new.ts" },
+        { status: "M", path: "src/existing.ts" },
+      ],
+    ),
+    [
+      { status: "M", path: "src/existing.ts" },
+      { status: "A", path: "src/new.ts" },
+    ],
+  );
 });
 
 test("file parser accepts spaces and tabs in names", () => {

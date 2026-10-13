@@ -38,6 +38,26 @@ export function parseChangedFiles(output: string): ChangedFile[] {
   return files;
 }
 
+/** Parse a NUL-separated path list, such as `git ls-files -z`. */
+export function parsePaths(output: string, status = "A"): ChangedFile[] {
+  return output.split("\0")
+    .filter((path) => path.length > 0)
+    .map((path) => ({ status, path }));
+}
+
+/** Combine file lists and keep the first status reported for each path. */
+export function mergeChangedFiles(...groups: ChangedFile[][]): ChangedFile[] {
+  const files = new Map<string, ChangedFile>();
+  for (const group of groups) {
+    for (const file of group) {
+      if (!files.has(file.path)) files.set(file.path, file);
+    }
+  }
+  return Array.from(files.values()).sort((left, right) =>
+    left.path.localeCompare(right.path)
+  );
+}
+
 /** Return the two Git revisions that form a commit file diff. */
 export function fileRevisions(
   commitHash: string,
