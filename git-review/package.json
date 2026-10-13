@@ -1,0 +1,16 @@
+{
+  "$schema": "https://fresh-editor.dev/schemas/package.schema.json",
+  "name": "git-review",
+  "version": "1.2.0",
+  "description": "Review working changes and commits in an expandable Git tree",
+  "type": "plugin",
+  "author": "Fresh Editor contributors",
+  "license": "MIT",
+  "repository": "https://github.com/sinelaw/fresh-plugins",
+  "keywords": ["git", "review", "commits", "diff"],
+  "fresh": {
+    "min_version": "0.5.2",
+    "min_api_version": 2,
+    "entry": "git_review.ts"
+  }
+}
