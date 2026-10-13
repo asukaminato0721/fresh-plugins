@@ -1,4 +1,3 @@
-/// <reference path="./lib/fresh.d.ts" />
 import { parseChangedFiles, parseCommits, type ChangedFile, type Commit } from "./lib/review_git.ts";
 
 const editor = getEditor();
