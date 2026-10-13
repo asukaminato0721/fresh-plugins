@@ -33,6 +33,15 @@ Deno.test("DAP commands use the current API and clean up an unresponsive adapter
   let openedLine = 0;
   let mailbox = "";
   let processResult: Promise<unknown> | null = null;
+  let activeBuffer = 1;
+  let activeSplit = 1;
+  let panelExists = false;
+  let panelCreates = 0;
+  let panelSplitCloses = 0;
+  let panelEntries: any[] = [];
+  const panelText = () => panelEntries.map((entry) => entry.text).join("");
+  const panelRow = (name: string) =>
+    panelText().split("\n").findIndex((line) => line.includes(name));
   const settings = {
     adapters: [{
       type: "fake",
@@ -94,17 +103,74 @@ Deno.test("DAP commands use the current API and clean up an unresponsive adapter
       state = value;
       return true;
     },
-    getActiveBufferId: () => 1,
-    getBufferPath: () => source,
+    getActiveBufferId: () => activeBuffer,
+    getActiveSplitId: () => activeSplit,
+    getBufferPath: (id: number) => id === 1 ? source : "",
     getPrimaryCursor: () => ({ line: cursorLine }),
-    listBuffers:
-      () => [{ id: 1, path: source, modified: true, is_virtual: false }],
+    listBuffers: () => [
+      { id: 1, path: source, modified: true, is_virtual: false },
+      ...(panelExists
+        ? [{ id: 2, path: "", modified: false, is_virtual: true }]
+        : []),
+    ],
+    listSplits: () => [
+      { splitId: 1, bufferId: 1 },
+      ...(panelExists ? [{ splitId: 2, bufferId: 2 }] : []),
+    ],
+    defineMode: () => true,
+    createVirtualBufferInSplit: async (opts: any) => {
+      assert(opts.direction === "vertical", "Variables open beside the source");
+      assert(opts.readOnly && opts.editingDisabled, "Variables are read-only");
+      panelCreates++;
+      panelExists = true;
+      activeBuffer = 2;
+      activeSplit = 2;
+      panelEntries = opts.entries;
+      return { bufferId: 2, splitId: 2 };
+    },
+    setVirtualBufferContent: (_id: number, entries: any[]) => {
+      panelEntries = entries;
+      return true;
+    },
+    focusSplit: (id: number) => {
+      activeSplit = id;
+      activeBuffer = id;
+      return true;
+    },
+    showBuffer: (id: number) => {
+      activeBuffer = id;
+      return true;
+    },
+    closeSplit: (id: number) => {
+      assert(id === 2, "Close only the variables pane");
+      panelSplitCloses++;
+      activeBuffer = 1;
+      activeSplit = 1;
+      return true;
+    },
+    closeBuffer: (id: number) => {
+      assert(id === 2, "Close only the variables buffer");
+      panelExists = false;
+      activeBuffer = 1;
+      activeSplit = 1;
+      hooks.get("buffer_closed")?.({ buffer_id: id });
+      return true;
+    },
     clearLineIndicators: (_id: number, ns: string) => markers.delete(ns),
     setLineIndicator: (_id: number, line: number, ns: string) =>
       markers.set(ns, [line]),
     setLineIndicators: (_id: number, lines: number[], ns: string) =>
       markers.set(ns, lines),
     openFile: (_path: string, line: number) => {
+      assert(
+        activeBuffer !== 2,
+        "Source navigation must not replace the variables buffer",
+      );
+      openedLine = line;
+      return true;
+    },
+    openFileInSplit: (id: number, _path: string, line: number) => {
+      assert(id === 1, "Stepping from variables targets the source pane");
       openedLine = line;
       return true;
     },
@@ -192,7 +258,7 @@ Deno.test("DAP commands use the current API and clean up an unresponsive adapter
   const run = async (name: string) => await handlers.get(name)!();
   try {
     await import(pluginUrl);
-    assert(commands.length === 8, "Register all eight debug commands");
+    assert(commands.length === 9, "Register execution and variables commands");
     await run("dap_toggle_breakpoint");
     assert(
       markers.get("dap-breakpoints")?.[0] === 2,
@@ -200,6 +266,21 @@ Deno.test("DAP commands use the current API and clean up an unresponsive adapter
     );
     await Promise.all([run("dap_start"), run("dap_start")]);
     await waitFor(() => openedLine === 3);
+    await waitFor(() => panelText().includes("count = 3 : int"));
+    assert(
+      panelCreates === 1 && activeBuffer === 1,
+      "Automatic variables panel preserves source focus",
+    );
+    assert(
+      !requests().some((r) =>
+        r.command === "variables" && r.arguments.variablesReference === 32
+      ),
+      "Expensive scopes stay lazy",
+    );
+    assert(
+      panelEntries.some((entry) => entry.style?.fg === "syntax.type"),
+      "Types use theme colors",
+    );
     assert(
       markers.get("dap-execution")?.[0] === 2,
       "Stopped frame indicator uses the source line",
@@ -237,16 +318,87 @@ Deno.test("DAP commands use the current API and clean up an unresponsive adapter
       markers.get("dap-breakpoints")?.join() === "2,4",
       "Update breakpoints during a session",
     );
+    await run("dap_variables");
+    cursorLine = panelRow("数据");
+    await run("dap_variables_toggle");
+    assert(
+      panelText().includes("café = hello world : list"),
+      "Render Unicode names and multiline values on one row",
+    );
+    cursorLine = panelRow("café");
+    await run("dap_variables_expand");
+    assert(
+      panelText().includes("[0] = 42 : int"),
+      "Expand nested array children",
+    );
+    await run("dap_variables_collapse");
+    assert(!panelText().includes("[0] ="), "Collapse removes child rows");
+    cursorLine = panelRow("retry");
+    await run("dap_variables_toggle");
+    assert(
+      panelText().includes("Temporary variable error"),
+      "Show adapter variable errors",
+    );
+    await run("dap_variables_toggle");
+    assert(panelText().includes("retried = ok"), "Retry a failed expansion");
+    hooks.get("mouse_click")!({
+      button: "left",
+      buffer_id: 2,
+      buffer_row: panelRow("Globals"),
+    });
+    await waitFor(() => panelText().includes("global_value = 99"));
     await run("dap_next");
     await waitFor(() => openedLine === 4);
+    await waitFor(() =>
+      panelText().includes("count = 4 : int") &&
+      panelText().includes("café = hello world")
+    );
+    assert(
+      !panelText().includes("count = 3"),
+      "Stepping refreshes values and references",
+    );
     await run("dap_step_in");
     await waitFor(() => openedLine === 5);
     await run("dap_step_out");
     await waitFor(() => openedLine === 6);
+    await waitFor(() => panelText().includes("count = 6"));
+    cursorLine = panelRow("delayed");
+    const delayedExpansion = run("dap_variables_toggle");
+    await waitFor(() =>
+      requests().some((r) =>
+        r.command === "variables" && r.arguments.variablesReference === 66
+      )
+    );
     await run("dap_continue");
+    await delayedExpansion;
     await waitFor(() => !markers.has("dap-execution"));
+    assert(
+      panelText().includes("Execution is running") &&
+        !panelText().includes("stale"),
+      "A late variables response cannot restore resumed state",
+    );
     await run("dap_pause");
     await waitFor(() => openedLine === 7);
+    await waitFor(() => panelText().includes("count = 7"));
+    await run("dap_variables_close");
+    assert(panelSplitCloses === 1, "Closing variables removes its pane");
+    await run("dap_next");
+    await waitFor(() => openedLine === 8);
+    assert(
+      !panelExists && panelCreates === 1,
+      "A closed panel stays closed on the next stop",
+    );
+    await run("dap_variables");
+    assert(
+      panelText().includes("count = 8") && Number(panelCreates) === 2,
+      "Reopen variables for the current paused frame",
+    );
+    await run("dap_next");
+    await waitFor(() => panelText().includes("count = 9"));
+    assert(
+      openedLine === 8 && !markers.has("dap-execution"),
+      "A frame without source still has variables and clears the old source marker",
+    );
     await run("dap_stop");
     await processResult;
     await waitFor(() => {
@@ -263,6 +415,11 @@ Deno.test("DAP commands use the current API and clean up an unresponsive adapter
       "Clear execution indicators after stop",
     );
     assert(status.includes("stopped"), "Report session stop");
+    assert(
+      panelText().includes("Debug session ended") &&
+        !panelText().includes("count ="),
+      "Session end clears variables",
+    );
     const adapters = settings.adapters;
     settings.adapters = [];
     await run("dap_start");

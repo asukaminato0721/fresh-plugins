@@ -2,7 +2,7 @@
   "$schema": "https://fresh-editor.dev/schemas/package.schema.json",
   "name": "dap",
   "version": "0.1.0",
-  "description": "Debug Adapter Protocol client with breakpoints and stepping",
+  "description": "Debug Adapter Protocol client with breakpoints, variables, and stepping",
   "type": "plugin",
   "author": "Fresh Editor contributors",
   "license": "MIT",

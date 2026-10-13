@@ -72,7 +72,8 @@ from the command palette. A red `●` marks the breakpoint. Fresh stores
 breakpoints across restarts.
 
 Run **Debug: Start**. When execution stops, Fresh opens the top stack frame. A
-green `▶` marks the current source line.
+green `▶` marks the current source line. A variable panel opens on the right.
+The source pane keeps keyboard focus.
 
 The command palette also provides these commands:
 
@@ -82,6 +83,22 @@ The command palette also provides these commands:
 - **Debug: Step Into**
 - **Debug: Step Out**
 - **Debug: Stop**
+- **Debug: Variables**
+
+The variable panel shows the scopes, names, values, and types for the top stack
+frame. Select a row with the mouse or the arrow keys. Press `Enter` or `Space`
+to expand or collapse it. `Right` expands a row. `Left` collapses it. Nested
+objects load when you expand them. Scopes that the adapter marks as expensive
+also load only when you expand them.
+
+Press `r` in the panel to refresh. Press `q` to close it. Run **Debug:
+Variables** to reopen it. A closed panel stays closed until you reopen it or
+start another session.
+
+Values refresh after each pause or step. Expanded rows remain expanded across
+steps. The panel clears values when execution continues or the session ends.
+Variable names, values, and types use the active theme colors. Variables are
+read-only.
 
 Save source files before debugging. Adapters usually execute the files on disk.
 The plugin reports unsaved source changes when it sends breakpoints.
@@ -89,10 +106,11 @@ The plugin reports unsaved source changes when it sends breakpoints.
 ## Scope
 
 This version supports one stdio adapter session at a time, with `launch` or
-`attach`. It provides breakpoints, source navigation, pause, continue, and
-stepping. It does not provide variable inspection, watch expressions, or a debug
-console panel. Adapter output goes to Fresh's diagnostic log. Use
-`internalConsole`. Adapter requests for `runInTerminal` are unsupported.
+`attach`. It provides breakpoints, source navigation, pause, continue, stepping,
+and variables for the top stack frame. It does not provide a stack-frame picker,
+watch expressions, variable editing, or a debug console panel. Adapter output
+goes to Fresh's diagnostic log. Use `internalConsole`. Adapter requests for
+`runInTerminal` are unsupported.
 
 The plugin starts the packaged Python bridge with `spawnBackgroundProcess`. It
 writes requests through Fresh's file API. The bridge sends DAP frames to the

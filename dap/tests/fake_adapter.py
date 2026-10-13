@@ -11,6 +11,8 @@ Path(pid_path).write_text(str(os.getpid()))
 launch = None
 line = 3
 sequence = 100
+delayed = None
+failed_references = set()
 
 
 def send(message):
@@ -67,11 +69,55 @@ while True:
     elif command == "threads":
         respond(request, {"threads": [{"id": 1, "name": "main"}]})
     elif command == "stackTrace":
-        respond(request, {"stackFrames": [{"id": 1, "name": "测试", "line": line,
-                    "column": 1, "source": {"path": source}}]})
+        frame = {"id": 1, "name": "测试", "line": line, "column": 1}
+        if line != 9:
+            frame["source"] = {"path": source}
+        else:
+            frame["line"] = 0
+        respond(request, {"stackFrames": [frame]})
+    elif command == "scopes":
+        respond(request, {"scopes": [
+            {"name": "Locals", "variablesReference": line * 10 + 1, "expensive": False},
+            {"name": "Globals", "variablesReference": line * 10 + 2, "expensive": True},
+        ]})
+    elif command == "variables":
+        reference = request["arguments"]["variablesReference"]
+        kind = reference % 10
+        if reference // 10 != line:
+            send({"type": "response", "command": command, "request_seq": request["seq"],
+                  "success": False, "message": "Stale variable reference"})
+        elif kind == 1:
+            respond(request, {"variables": [
+                {"name": "count", "value": str(line), "type": "int", "variablesReference": 0},
+                {"name": "数据", "value": "{...}", "type": "dict", "variablesReference": line * 10 + 3},
+                {"name": "retry", "value": "{...}", "variablesReference": line * 10 + 5},
+                {"name": "delayed", "value": "{...}", "variablesReference": line * 10 + 6},
+            ]})
+        elif kind == 2:
+            respond(request, {"variables": [
+                {"name": "global_value", "value": "99", "variablesReference": 0}]})
+        elif kind == 3:
+            respond(request, {"variables": [
+                {"name": "café", "value": "hello\nworld", "type": "list", "variablesReference": line * 10 + 4}]})
+        elif kind == 4:
+            respond(request, {"variables": [
+                {"name": "[0]", "value": "42", "type": "int", "variablesReference": 0}]})
+        elif kind == 5 and reference not in failed_references:
+            failed_references.add(reference)
+            send({"type": "response", "command": command, "request_seq": request["seq"],
+                  "success": False, "message": "Temporary variable error"})
+        elif kind == 5:
+            respond(request, {"variables": [{"name": "retried", "value": "ok", "variablesReference": 0}]})
+        elif kind == 6 and reference == 66:
+            delayed = request
+        elif kind == 6:
+            respond(request, {"variables": [{"name": "normal", "value": "ok", "variablesReference": 0}]})
     elif command == "continue":
         respond(request)
         event("continued", {"threadId": 1})
+        if delayed:
+            respond(delayed, {"variables": [{"name": "stale", "value": "wrong", "variablesReference": 0}]})
+            delayed = None
     elif command in ("pause", "next", "stepIn", "stepOut"):
         line += 1
         respond(request)

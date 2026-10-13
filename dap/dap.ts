@@ -6,7 +6,10 @@
  * the debuggee, while `plugins.dap.settings.adapters` describes how Fresh can
  * start each adapter type.
  */
+import { VariablesPanel } from "./lib/variables.ts";
+
 const editor = getEditor();
+const variables = new VariablesPanel(editor, request);
 
 interface AdapterConfig {
   type: string;
@@ -163,6 +166,9 @@ async function handleEvent(event: string, body: any): Promise<void> {
       break;
     case "stopped":
       const stoppedVersion = ++stopVersion;
+      stoppedLocation = null;
+      clearExecutionIndicator();
+      variables.clear("Loading paused frame...");
       if (body.threadId == null) {
         const current = session;
         const threads = await request("threads");
@@ -182,6 +188,7 @@ async function handleEvent(event: string, body: any): Promise<void> {
       stopVersion++;
       session.stoppedThread = null;
       stoppedLocation = null;
+      variables.clear("Execution is running. Pause to inspect variables.");
       clearExecutionIndicator();
       editor.setStatus("Debug running");
       break;
@@ -220,24 +227,47 @@ async function revealTopFrame(threadId: number): Promise<void> {
     });
     if (session !== current || stopVersion !== version) return;
     const frame = body?.stackFrames?.[0];
-    if (!frame?.source?.path || !frame?.line) return;
-    stoppedLocation = {
-      path: String(frame.source.path),
-      line: Number(frame.line),
-    };
-    editor.openFile(
-      stoppedLocation.path,
-      stoppedLocation.line,
-      frame.column || 1,
-    );
-    // `openFile` does not emit `buffer_activated` when the frame is already in
-    // the active buffer, so render immediately as well as from the hook below.
-    renderIndicators();
-    editor.setStatus(
-      `Paused at ${
-        frame.name || "frame"
-      } — ${stoppedLocation.path}:${stoppedLocation.line}`,
-    );
+    if (!frame) {
+      variables.clear("No stack frame available.");
+      return;
+    }
+    if (frame.source?.path && frame.line) {
+      stoppedLocation = {
+        path: String(frame.source.path),
+        line: Number(frame.line),
+      };
+      if (
+        variables.owns(editor.getActiveBufferId()) &&
+        variables.sourceSplit != null &&
+        editor.listSplits().some((split) =>
+          split.splitId === variables.sourceSplit
+        )
+      ) {
+        editor.openFileInSplit(
+          variables.sourceSplit,
+          stoppedLocation.path,
+          stoppedLocation.line,
+          frame.column || 1,
+        );
+      } else {
+        editor.openFile(
+          stoppedLocation.path,
+          stoppedLocation.line,
+          frame.column || 1,
+        );
+      }
+      // `openFile` does not emit `buffer_activated` when the frame is already in
+      // the active buffer, so render immediately as well as from the hook below.
+      for (const buffer of editor.listBuffers()) {
+        if (!buffer.is_virtual) renderIndicators(buffer.id);
+      }
+      editor.setStatus(
+        `Paused at ${
+          frame.name || "frame"
+        } — ${stoppedLocation.path}:${stoppedLocation.line}`,
+      );
+    }
+    await variables.setFrame(Number(frame.id), String(frame.name || "frame"));
   } catch (error) {
     if (session === current && stopVersion === version) {
       editor.setStatus(`Could not load stack frame: ${String(error)}`);
@@ -383,6 +413,7 @@ async function startDebugging(): Promise<void> {
     return;
   }
   starting = true;
+  variables.beginSession();
   const version = ++startVersion;
   let cleanup: (() => Promise<void>) | null = null;
   try {
@@ -454,6 +485,7 @@ async function startDebugging(): Promise<void> {
       pathFormat: "path",
       linesStartAt1: true,
       columnsStartAt1: true,
+      supportsVariableType: true,
       supportsRunInTerminalRequest: false,
     });
     if (session !== current) return;
@@ -486,6 +518,7 @@ function endSession(status: string): void {
   session = null;
   stoppedLocation = null;
   stopVersion++;
+  variables.clear("Debug session ended. Start a session to inspect variables.");
   if (old) {
     editor.clearInterval(old.timer);
     editor.writeFile(
@@ -592,6 +625,36 @@ registerHandler("dap_next", () => control("next"));
 registerHandler("dap_step_in", () => control("stepIn"));
 registerHandler("dap_step_out", () => control("stepOut"));
 registerHandler("dap_pause", () => control("pause"));
+const panelAction = (action: () => Promise<void>) => () =>
+  action().catch((error) => {
+    editor.setStatus(`Cannot update variables: ${String(error)}`);
+  });
+registerHandler("dap_variables", panelAction(() => variables.show()));
+registerHandler(
+  "dap_variables_toggle",
+  panelAction(() => variables.atCursor()),
+);
+registerHandler(
+  "dap_variables_expand",
+  panelAction(() => variables.atCursor(true)),
+);
+registerHandler(
+  "dap_variables_collapse",
+  panelAction(() => variables.atCursor(false)),
+);
+registerHandler(
+  "dap_variables_refresh",
+  panelAction(() => variables.refresh()),
+);
+registerHandler("dap_variables_close", () => variables.close());
+editor.defineMode("dap-variables", [
+  ["Return", "dap_variables_toggle"],
+  ["Space", "dap_variables_toggle"],
+  ["Right", "dap_variables_expand"],
+  ["Left", "dap_variables_collapse"],
+  ["r", "dap_variables_refresh"],
+  ["q", "dap_variables_close"],
+], true);
 
 editor.registerCommand(
   "Debug: Start",
@@ -636,6 +699,12 @@ editor.registerCommand(
   null,
 );
 editor.registerCommand("Debug: Pause", "Pause the debuggee", "dap_pause", null);
+editor.registerCommand(
+  "Debug: Variables",
+  "Show variables for the paused frame",
+  "dap_variables",
+  null,
+);
 
 (editor.on as any)(
   "onProcessStdout",
@@ -658,6 +727,18 @@ editor.on("buffer_activated", (args) => {
 });
 editor.on("after_file_save", (args) => {
   renderIndicators(args.buffer_id);
+});
+editor.on("after_file_open", (args) => renderIndicators(args.buffer_id));
+editor.on("buffer_closed", (args) => variables.closed(args.buffer_id));
+editor.on("mouse_click", (args) => {
+  if (
+    args.button === "left" && variables.owns(args.buffer_id) &&
+    args.buffer_row != null
+  ) {
+    void variables.activate(args.buffer_row).catch((error) =>
+      editor.setStatus(`Cannot expand variable: ${String(error)}`)
+    );
+  }
 });
 
 renderIndicators();
