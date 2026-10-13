@@ -13,6 +13,7 @@ import {
 const editor = getEditor();
 const PANEL_NAME = "minimap";
 const COLUMNS_PER_DOT = 3;
+const BRAILLE_BLANK = "\u2800";
 const FALLBACK_BG: Rgb = [30, 30, 30];
 const FALLBACK_FG: Rgb = [210, 210, 210];
 const FALLBACK_VIEW_BG: Rgb = [65, 65, 70];
@@ -96,13 +97,27 @@ function render(): void {
       unit: "char",
       style: { fg: ensureContrast(run.color, background) },
     }));
+    if (isCursor) {
+      const cells = [...row.text];
+      let contentEnd = cells.length;
+      while (contentEnd > 0 && cells[contentEnd - 1] === BRAILLE_BLANK) {
+        contentEnd--;
+      }
+      if (contentEnd > 0) {
+        inlineOverlays.push({
+          start: 0,
+          end: contentEnd,
+          unit: "char",
+          style: { underline: true },
+        });
+      }
+    }
     return {
       text: `${row.text}\n`,
       properties: { sourceLine: row.line },
       style: {
         fg: ensureContrast(theme.fg, background),
         bg: background,
-        underline: isCursor,
       },
       inlineOverlays,
     };
