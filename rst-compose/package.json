@@ -1,0 +1,37 @@
+{
+  "$schema": "https://fresh-editor.dev/schemas/package.schema.json",
+  "name": "rst-compose",
+  "version": "0.1.0",
+  "description": "Edit reStructuredText with compose layout and cursor-revealed markup",
+  "type": "plugin",
+  "author": "asukaminato0721",
+  "license": "MIT",
+  "repository": "https://github.com/asukaminato0721/fresh-plugins#rst-compose",
+  "keywords": ["rst", "restructuredtext", "compose", "writing"],
+  "fresh": {
+    "min_version": "0.5.3",
+    "min_api_version": 2,
+    "entry": "rst-compose.ts",
+    "config_schema": {
+      "type": "object",
+      "properties": {
+        "autoCompose": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable compose when an RST file opens."
+        },
+        "pageWidth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 400,
+          "description": "Page width in columns. Zero uses the full pane. Omit to use editor settings."
+        },
+        "hideLineNumbers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hide line numbers in compose unless the user pins them on."
+        }
+      }
+    }
+  }
+}

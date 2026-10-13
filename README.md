@@ -8,6 +8,7 @@ This repository contains plugins for [Fresh](https://github.com/sinelaw/fresh).
 | Git Review | Review working changes, unsaved edits, staged changes, and commits. | [Git Review](git-review/README.md) |
 | DAP | Debug with breakpoints, stepping, and a variable panel. | [DAP](dap/README.md) |
 | Image Preview | Preview images with Chafa or ImageMagick. | [Image Preview](image-preview/README.md) |
+| RST Compose | Edit reStructuredText in compose view with cursor-revealed markup. | [RST Compose](rst-compose/README.md) |
 
 ## Install
 
@@ -19,6 +20,7 @@ https://github.com/asukaminato0721/fresh-plugins#minimap
 https://github.com/asukaminato0721/fresh-plugins#git-review
 https://github.com/asukaminato0721/fresh-plugins#dap
 https://github.com/asukaminato0721/fresh-plugins#image-preview
+https://github.com/asukaminato0721/fresh-plugins#rst-compose
 ```
 
 Restart Fresh after installation. DAP also requires Python 3, a debug adapter,
