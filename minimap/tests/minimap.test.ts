@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildMinimap, lineForRow, miniature, rowForLine } from "./lib/minimap.ts";
+import { buildMinimap, lineForRow, miniature, rowForLine } from "../lib/minimap.ts";
 
 test("map includes the first and final lines", () => {
   const source = Array.from({ length: 101 }, (_, index) => `line ${index}`).join("\n");
