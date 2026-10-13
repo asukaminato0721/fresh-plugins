@@ -35,10 +35,16 @@ export interface MinimapLayout {
 
 export const LINES_PER_ROW = 4;
 const BRAILLE_BASE = 0x2800;
+const BRAILLE_CELL_BYTES = 3;
 const DOT: readonly (readonly number[])[] = [
   [0x01, 0x02, 0x04, 0x40],
   [0x08, 0x10, 0x20, 0x80],
 ];
+
+/** Convert a Braille-cell index to its UTF-8 byte offset. */
+export function brailleByteOffset(cell: number): number {
+  return Math.max(0, Math.floor(cell)) * BRAILLE_CELL_BYTES;
+}
 
 /** Fresh uses UTF-8 byte offsets for syntax spans. */
 export function byteLength(text: string): number {

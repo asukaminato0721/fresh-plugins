@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  brailleByteOffset,
   contrastRatio,
   encodeBraille,
   ensureContrast,
@@ -11,6 +12,12 @@ import {
 
 const braille = (bits: number) => String.fromCodePoint(0x2800 + bits);
 const lines = (...text: string[]) => sourceLines(text.join("\n"));
+
+test("Braille cell offsets use UTF-8 bytes", () => {
+  assert.equal(brailleByteOffset(0), 0);
+  assert.equal(brailleByteOffset(1), 3);
+  assert.equal(brailleByteOffset(7), 21);
+});
 
 test("Braille dots follow four source lines", () => {
   assert.equal(encodeBraille(lines("ab"), 1, 1).text, braille(0x01 + 0x08));

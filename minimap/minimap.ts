@@ -1,4 +1,5 @@
 import {
+  brailleByteOffset,
   ensureContrast,
   type HighlightSpan,
   layoutMinimap,
@@ -100,9 +101,9 @@ function render(): void {
     const isCursor = Math.floor(cursorLine / 4) - layout.offset === index;
     const background = inViewport ? theme.viewBg : theme.bg;
     const inlineOverlays: InlineOverlay[] = row.colors.map((run) => ({
-      start: run.start,
-      end: run.end,
-      unit: "char",
+      start: brailleByteOffset(run.start),
+      end: brailleByteOffset(run.end),
+      unit: "byte",
       style: { fg: ensureContrast(run.color, background) },
     }));
     if (isCursor) {
@@ -114,8 +115,8 @@ function render(): void {
       if (contentEnd > 0) {
         inlineOverlays.push({
           start: 0,
-          end: contentEnd,
-          unit: "char",
+          end: brailleByteOffset(contentEnd),
+          unit: "byte",
           style: { underline: true },
         });
       }
