@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseChangedFiles, parseCommits } from "./lib/review_git.ts";
+import { parseChangedFiles, parseCommits } from "../lib/review_git.ts";
 
 test("commit parser keeps subjects with spaces", () => {
   const hash = "a".repeat(40);
