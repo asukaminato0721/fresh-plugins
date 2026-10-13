@@ -1,8 +1,8 @@
 {
   "$schema": "https://fresh-editor.dev/schemas/package.schema.json",
   "name": "git-review",
-  "version": "1.0.0",
-  "description": "Browse commits, changed files, and file diffs in a sidebar",
+  "version": "1.1.0",
+  "description": "Review commit files in an expandable tree and side-by-side diff",
   "type": "plugin",
   "author": "Fresh Editor contributors",
   "license": "MIT",

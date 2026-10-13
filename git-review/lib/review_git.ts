@@ -8,6 +8,11 @@ export interface ChangedFile {
   path: string;
 }
 
+export interface FileRevisions {
+  oldRevision: string | null;
+  newRevision: string | null;
+}
+
 /** Parse `git log -z --format=%H%x00%s`. */
 export function parseCommits(output: string): Commit[] {
   const fields = output.split("\0");
@@ -31,4 +36,15 @@ export function parseChangedFiles(output: string): ChangedFile[] {
     files.push({ status, path });
   }
   return files;
+}
+
+/** Return the two Git revisions that form a commit file diff. */
+export function fileRevisions(
+  commitHash: string,
+  file: ChangedFile,
+): FileRevisions {
+  return {
+    oldRevision: file.status === "A" ? null : `${commitHash}^:${file.path}`,
+    newRevision: file.status === "D" ? null : `${commitHash}:${file.path}`,
+  };
 }
