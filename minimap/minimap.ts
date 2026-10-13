@@ -53,7 +53,13 @@ function rgb(value: unknown, fallback: Rgb): Rgb {
   return fallback;
 }
 
-function themeColors(): { bg: Rgb; fg: Rgb; viewBg: Rgb } {
+function mixColor(foreground: Rgb, background: Rgb, amount: number): Rgb {
+  return foreground.map((value, index) =>
+    Math.round(background[index] + (value - background[index]) * amount)
+  ) as Rgb;
+}
+
+function themeColors(): { bg: Rgb; plainFg: Rgb; viewBg: Rgb } {
   const name = editor.getConfig().theme;
   const data = name ? editor.getThemeData(name) : null;
   const theme = data && typeof data === "object"
@@ -62,9 +68,11 @@ function themeColors(): { bg: Rgb; fg: Rgb; viewBg: Rgb } {
   const section = theme.editor && typeof theme.editor === "object"
     ? theme.editor as Record<string, unknown>
     : {};
+  const bg = rgb(section.bg, FALLBACK_BG);
+  const fg = rgb(section.fg, FALLBACK_FG);
   return {
-    bg: rgb(section.bg, FALLBACK_BG),
-    fg: rgb(section.fg, FALLBACK_FG),
+    bg,
+    plainFg: rgb(section.line_number_fg, mixColor(fg, bg, 0.45)),
     viewBg: rgb(section.selection_bg, FALLBACK_VIEW_BG),
   };
 }
@@ -116,7 +124,7 @@ function render(): void {
       text: `${row.text}\n`,
       properties: { sourceLine: row.line },
       style: {
-        fg: ensureContrast(theme.fg, background),
+        fg: ensureContrast(theme.plainFg, background, 2),
         bg: background,
       },
       inlineOverlays,

@@ -9,8 +9,9 @@ screen.
 
 Each cell uses the most common syntax color in its source area. The plugin
 checks this color against the current theme background and raises low contrast.
-The highlighted background shows the source viewport. An underline shows the
-source cursor row.
+Text without a syntax color uses the theme's muted line-number color. The
+highlighted background shows the source viewport. An underline shows the source
+cursor row.
 
 Click a map row or drag the cursor through the map to scroll the source file.
 Run **Minimap: Toggle** again to close the pane.
