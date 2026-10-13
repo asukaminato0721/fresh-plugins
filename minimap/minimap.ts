@@ -1,8 +1,21 @@
-import { buildMinimap, byteLength, rowForLine, type MinimapRow } from "./lib/minimap.ts";
+import {
+  ensureContrast,
+  type HighlightSpan,
+  layoutMinimap,
+  type MinimapLayout,
+  type MinimapRow,
+  type Rgb,
+  type SourceLine,
+  sourceLines,
+  visibleRows,
+} from "./lib/minimap.ts";
 
 const editor = getEditor();
-const MAX_BYTES = 1024 * 1024;
 const PANEL_NAME = "minimap";
+const COLUMNS_PER_DOT = 3;
+const FALLBACK_BG: Rgb = [30, 30, 30];
+const FALLBACK_FG: Rgb = [210, 210, 210];
+const FALLBACK_VIEW_BG: Rgb = [65, 65, 70];
 
 let shown = false;
 let opening = false;
@@ -10,78 +23,94 @@ let sourceBuffer: number | null = null;
 let sourceSplit: number | null = null;
 let panelBuffer: number | null = null;
 let panelSplit: number | null = null;
+let lines: SourceLine[] = [];
 let rows: MinimapRow[] = [];
-let highlights: TsHighlightSpan[] = [];
-let totalLines = 0;
+let highlights: HighlightSpan[] = [];
 let topLine = 0;
 let viewportHeight = 1;
+let cursorLine = 0;
+let layout: MinimapLayout = { rows: 1, offset: 0, viewTop: 0, viewBottom: 0 };
 let generation = 0;
 let rescanTimer: number | null = null;
 
 function panelWidth(): number {
-  const pane = editor.describeWorkspace().panes.find((p) => p.splitId === panelSplit);
-  return Math.max(6, Math.min(30, (pane?.width ?? 16) - 2));
+  const pane = editor.describeWorkspace().panes.find((item) =>
+    item.splitId === panelSplit
+  );
+  return Math.max(6, Math.min(24, (pane?.width ?? 16) - 2));
 }
 
-function highlightAt(byte: number): TsHighlightSpan | null {
-  let low = 0;
-  let high = highlights.length;
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-    if (highlights[mid].start <= byte) low = mid + 1;
-    else high = mid;
+function rgb(value: unknown, fallback: Rgb): Rgb {
+  if (
+    Array.isArray(value) && value.length === 3 &&
+    value.every((part) => typeof part === "number")
+  ) {
+    return value.map((part) =>
+      Math.max(0, Math.min(255, Math.round(part)))
+    ) as Rgb;
   }
-  const span = highlights[low - 1];
-  return span && byte < span.end ? span : null;
+  return fallback;
 }
 
-/** Keep the color of sampled syntax tokens in the compressed display. */
-function colorOffsets(row: MinimapRow, width: number): Array<number | null> {
-  const offsets: Array<number | null> = Array(width).fill(null);
-  let byte = row.sampleStartByte;
-  let column = 0;
-  for (const char of row.sampleText) {
-    if (column >= width * 2) break;
-    if (char === "\t") {
-      column += 4 - column % 4;
-    } else {
-      if (!/\s/u.test(char) && offsets[Math.floor(column / 2)] === null) {
-        offsets[Math.floor(column / 2)] = byte;
-      }
-      column++;
-    }
-    byte += byteLength(char);
-  }
-  return offsets;
+function themeColors(): { bg: Rgb; fg: Rgb; viewBg: Rgb } {
+  const name = editor.getConfig().theme;
+  const data = name ? editor.getThemeData(name) : null;
+  const theme = data && typeof data === "object"
+    ? data as Record<string, unknown>
+    : {};
+  const section = theme.editor && typeof theme.editor === "object"
+    ? theme.editor as Record<string, unknown>
+    : {};
+  return {
+    bg: rgb(section.bg, FALLBACK_BG),
+    fg: rgb(section.fg, FALLBACK_FG),
+    viewBg: rgb(section.selection_bg, FALLBACK_VIEW_BG),
+  };
 }
 
 function render(): void {
-  if (!shown || panelBuffer === null) return;
+  if (!shown || panelBuffer === null || lines.length === 0) return;
   const width = panelWidth();
-  const first = rowForLine(topLine, rows.length, totalLines);
-  const last = rowForLine(topLine + viewportHeight - 1, rows.length, totalLines);
+  layout = layoutMinimap(
+    viewportHeight,
+    lines.length,
+    topLine,
+    topLine + viewportHeight - 1,
+  );
+  rows = visibleRows(
+    lines,
+    layout,
+    viewportHeight,
+    width,
+    COLUMNS_PER_DOT,
+    highlights,
+  );
+  const theme = themeColors();
   const entries: TextPropertyEntry[] = rows.map((row, index) => {
-    const text = `${index >= first && index <= last ? "┃" : " "}${row.text.padEnd(width)}\n`;
-    const offsets = colorOffsets(row, width);
-    const inlineOverlays: InlineOverlay[] = [];
-    for (let col = 0; col < row.text.length; col++) {
-      const byte = offsets[col];
-      const span = byte === null ? null : highlightAt(byte);
-      if (span) inlineOverlays.push({
-        start: col + 1,
-        end: col + 2,
-        unit: "char",
-        style: { fg: span.color },
-      });
-    }
+    const inViewport = index >= layout.viewTop && index <= layout.viewBottom;
+    const isCursor = Math.floor(cursorLine / 4) - layout.offset === index;
+    const background = inViewport ? theme.viewBg : theme.bg;
+    const inlineOverlays: InlineOverlay[] = row.colors.map((run) => ({
+      start: run.start,
+      end: run.end,
+      unit: "char",
+      style: { fg: ensureContrast(run.color, background) },
+    }));
     return {
-      text,
+      text: `${row.text}\n`,
       properties: { sourceLine: row.line },
-      style: index >= first && index <= last ? { bg: "editor.selection_bg" } : undefined,
+      style: {
+        fg: ensureContrast(theme.fg, background),
+        bg: background,
+        underline: isCursor,
+      },
       inlineOverlays,
     };
   });
-  editor.setVirtualBufferContent(panelBuffer, entries as unknown as Record<string, unknown>[]);
+  editor.setVirtualBufferContent(
+    panelBuffer,
+    entries as unknown as Record<string, unknown>[],
+  );
 }
 
 function closePanel(): void {
@@ -94,31 +123,41 @@ function closePanel(): void {
   panelBuffer = null;
   sourceBuffer = null;
   sourceSplit = null;
+  lines = [];
   rows = [];
   highlights = [];
   if (split !== null) editor.closeSplit(split);
   if (buffer !== null) editor.closeBuffer(buffer, true);
 }
 
+function scrollSourceToMapRow(mapRow: number): void {
+  if (sourceBuffer === null) return;
+  const row = rows[mapRow];
+  if (!row) return;
+  const splits = editor.getBufferInfo(sourceBuffer)?.splits ?? [];
+  const split = sourceSplit !== null && splits.includes(sourceSplit)
+    ? sourceSplit
+    : splits[0];
+  if (split !== undefined) {
+    editor.scrollToLineCenter(split, sourceBuffer, row.line);
+  }
+}
+
 async function rescan(id: number): Promise<void> {
   const scan = ++generation;
   const info = editor.getBufferInfo(id);
   if (!info || info.is_virtual || panelBuffer === null) return;
-  if (info.length > MAX_BYTES) {
-    rows = [{ line: 0, sampleLine: 0, sampleStartByte: 0,
-      sampleText: "", text: "File exceeds 1 MiB" }];
-    highlights = [];
-    totalLines = 1;
-    render();
-    return;
-  }
   try {
-    const text = await editor.getBufferText(id);
-    const spans = await editor.getHighlights(id, 0, info.length).catch(() => []);
-    if (scan !== generation || !shown || sourceBuffer !== id || panelBuffer === null) return;
+    const [text, spans] = await Promise.all([
+      editor.getBufferText(id),
+      editor.getHighlights(id, 0, info.length).catch(() => []),
+    ]);
+    if (
+      scan !== generation || !shown || sourceBuffer !== id ||
+      panelBuffer === null
+    ) return;
+    lines = sourceLines(text);
     highlights = spans.sort((a, b) => a.start - b.start);
-    totalLines = text.split("\n").length;
-    rows = buildMinimap(text, Math.max(1, Math.min(viewportHeight, 200)), panelWidth());
     render();
   } catch (error) {
     editor.debug(`Minimap scan failed: ${error}`);
@@ -136,6 +175,7 @@ async function openPanel(id: number): Promise<void> {
   const viewport = editor.getViewport();
   topLine = viewport?.topLine ?? 0;
   viewportHeight = viewport?.height ?? 1;
+  cursorLine = editor.getPrimaryCursor()?.line ?? 0;
   try {
     const screen = editor.getScreenSize();
     const ratio = Math.max(0.75, Math.min(0.9, 1 - 16 / screen.width));
@@ -180,6 +220,7 @@ function activate(id: number): void {
   const viewport = editor.getViewport();
   topLine = viewport?.topLine ?? 0;
   viewportHeight = viewport?.height ?? 1;
+  cursorLine = editor.getPrimaryCursor()?.line ?? 0;
   if (panelBuffer === null) void openPanel(id);
   else void rescan(id);
 }
@@ -194,7 +235,12 @@ registerHandler("minimapToggle", () => {
   if (shown) activate(editor.getActiveBufferId());
   else closePanel();
 });
-editor.registerCommand("Minimap: Toggle", "Show or hide the code minimap", "minimapToggle", null);
+editor.registerCommand(
+  "Minimap: Toggle",
+  "Show or hide the code minimap",
+  "minimapToggle",
+  null,
+);
 
 editor.on("buffer_activated", (data) => activate(data.buffer_id));
 editor.on("buffer_closed", (data) => {
@@ -210,17 +256,25 @@ editor.on("buffer_modified", (data) => {
 });
 editor.on("viewport_changed", (data) => {
   if (!shown || data.buffer_id !== sourceBuffer) return;
-  const changedSize = viewportHeight !== data.height;
   topLine = data.top_line ?? topLine;
   viewportHeight = data.height;
-  if (changedSize) void rescan(data.buffer_id);
-  else render();
+  render();
 });
 editor.on("cursor_moved", (data) => {
-  if (!shown || data.buffer_id !== panelBuffer || sourceBuffer === null) return;
-  const row = rows[data.line];
-  if (!row || (totalLines === 1 && row.text === "File exceeds 1 MiB")) return;
-  const splits = editor.getBufferInfo(sourceBuffer)?.splits ?? [];
-  const split = sourceSplit !== null && splits.includes(sourceSplit) ? sourceSplit : splits[0];
-  if (split !== undefined) editor.scrollToLineCenter(split, sourceBuffer, row.line);
+  if (!shown) return;
+  if (data.buffer_id === sourceBuffer) {
+    cursorLine = data.line;
+    render();
+    return;
+  }
+  if (data.buffer_id === panelBuffer) scrollSourceToMapRow(data.line);
+});
+editor.on("mouse_click", (data) => {
+  if (!shown || data.buffer_id !== panelBuffer || data.buffer_row === null) {
+    return;
+  }
+  scrollSourceToMapRow(data.buffer_row);
+});
+editor.on("config_changed", () => {
+  if (shown && sourceBuffer !== null) void rescan(sourceBuffer);
 });

@@ -1,11 +1,44 @@
-/** One screen row summarizes a contiguous range of source lines. */
-export interface MinimapRow {
-  line: number;
-  sampleLine: number;
-  sampleStartByte: number;
-  sampleText: string;
-  text: string;
+export type Rgb = [number, number, number];
+
+export interface HighlightSpan {
+  start: number;
+  end: number;
+  color: Rgb;
 }
+
+export interface SourceLine {
+  text: string;
+  startByte: number;
+}
+
+export interface ColorRun {
+  start: number;
+  end: number;
+  color: Rgb;
+}
+
+export interface EncodedRow {
+  text: string;
+  colors: ColorRun[];
+}
+
+export interface MinimapRow extends EncodedRow {
+  line: number;
+}
+
+export interface MinimapLayout {
+  rows: number;
+  offset: number;
+  viewTop: number;
+  viewBottom: number;
+}
+
+export const LINES_PER_ROW = 4;
+const BRAILLE_BASE = 0x2800;
+const DOT: readonly (readonly number[])[] = [
+  [0x01, 0x02, 0x04, 0x40],
+  [0x08, 0x10, 0x20, 0x80],
+];
 
 /** Fresh uses UTF-8 byte offsets for syntax spans. */
 export function byteLength(text: string): number {
@@ -14,7 +47,7 @@ export function byteLength(text: string): number {
     const code = text.charCodeAt(i);
     if (code <= 0x7f) count++;
     else if (code <= 0x7ff) count += 2;
-    else if (code >= 0xd800 && code <= 0xdfff) {
+    else if (code >= 0xd800 && code <= 0xdbff) {
       count += 4;
       i++;
     } else count += 3;
@@ -22,86 +55,210 @@ export function byteLength(text: string): number {
   return count;
 }
 
-/** Map a map row to a source line. The last row reaches the last line. */
-export function lineForRow(row: number, rows: number, lineCount: number): number {
-  if (rows <= 1 || lineCount <= 1) return 0;
-  return Math.round(Math.max(0, Math.min(row, rows - 1)) * (lineCount - 1) / (rows - 1));
-}
-
-/** Map a source line to the nearest map row. */
-export function rowForLine(line: number, rows: number, lineCount: number): number {
-  if (rows <= 1 || lineCount <= 1) return 0;
-  return Math.round(Math.max(0, Math.min(line, lineCount - 1)) * (rows - 1) / (lineCount - 1));
-}
-
-/** Convert one source line to the columns occupied by its visible text. */
-function occupiedColumns(line: string, width: number): Set<number> {
-  const columns = new Set<number>();
-  let position = 0;
-  for (const char of line) {
-    if (position >= width * 2) break;
-    if (char === "\t") {
-      position += 4 - position % 4;
-    } else {
-      if (!/\s/u.test(char)) columns.add(Math.floor(position / 2));
-      position++;
-    }
-  }
-  return columns;
-}
-
-/** One line's compact shape, kept for callers that need a single-line map. */
-export function miniature(line: string, width = 20): string {
-  const columns = occupiedColumns(line, Math.max(1, width));
-  const last = Math.max(-1, ...columns);
-  return last < 0 ? " " : Array.from({ length: last + 1 }, (_, col) =>
-    columns.has(col) ? "█" : " "
-  ).join("");
-}
-
-/** Aggregate every line in each range. Density remains visible after downsampling. */
-export function buildMinimap(text: string, rows: number, width = 20): MinimapRow[] {
+export function sourceLines(text: string): SourceLine[] {
   const lines = text.split("\n");
-  const count = Math.max(1, Math.min(Math.floor(rows), lines.length));
-  const columns = Math.max(1, Math.floor(width));
-  const starts: number[] = [];
-  let byte = 0;
+  const result: SourceLine[] = [];
+  let startByte = 0;
   for (const line of lines) {
-    starts.push(byte);
-    byte += byteLength(line) + 1;
-  }
-  const result: MinimapRow[] = [];
-  for (let row = 0; row < count; row++) {
-    const start = lineForRow(row, count, lines.length);
-    const end = row + 1 < count ? lineForRow(row + 1, count, lines.length) : lines.length;
-    const hits = Array<number>(columns).fill(0);
-    let sampleLine = start;
-    let sampleLength = -1;
-    for (let line = start; line < end; line++) {
-      const occupied = occupiedColumns(lines[line], columns);
-      if (occupied.size > sampleLength) {
-        sampleLine = line;
-        sampleLength = occupied.size;
-      }
-      for (const col of occupied) hits[col]++;
-    }
-    const lineCount = Math.max(1, end - start);
-    let last = -1;
-    for (let col = 0; col < hits.length; col++) {
-      if (hits[col] > 0) last = col;
-    }
-    const rendered = last < 0 ? " " : hits.slice(0, last + 1).map((hit) => {
-      if (!hit) return " ";
-      const density = hit / lineCount;
-      return density < 0.2 ? "░" : density < 0.45 ? "▒" : density < 0.75 ? "▓" : "█";
-    }).join("");
-    result.push({
-      line: start,
-      sampleLine,
-      sampleStartByte: starts[sampleLine],
-      sampleText: lines[sampleLine],
-      text: rendered,
-    });
+    result.push({ text: line, startByte });
+    startByte += byteLength(line) + 1;
   }
   return result;
+}
+
+function highlightAt(
+  spans: readonly HighlightSpan[],
+  byte: number,
+): HighlightSpan | null {
+  let low = 0;
+  let high = spans.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (spans[mid].start <= byte) low = mid + 1;
+    else high = mid;
+  }
+  const span = spans[low - 1];
+  return span && byte < span.end ? span : null;
+}
+
+function colorKey(color: Rgb): string {
+  return `${color[0]},${color[1]},${color[2]}`;
+}
+
+/** Encode four source lines as one row of Unicode Braille cells. */
+export function encodeBraille(
+  lines: readonly SourceLine[],
+  cellCount: number,
+  columnsPerDot = 3,
+  tabSize = 4,
+  highlights: readonly HighlightSpan[] = [],
+): EncodedRow {
+  const width = Math.max(1, Math.floor(cellCount));
+  const perDot = Math.max(1, Math.floor(columnsPerDot));
+  const cells = Array<number>(width).fill(0);
+  const counts = Array.from(
+    { length: width },
+    () => new Map<string, { color: Rgb; count: number }>(),
+  );
+  const limit = width * 2 * perDot;
+
+  for (let y = 0; y < Math.min(LINES_PER_ROW, lines.length); y++) {
+    const line = lines[y];
+    let column = 0;
+    let localByte = 0;
+    for (const char of line.text) {
+      const size = byteLength(char);
+      if (char === "\t") {
+        column += tabSize - column % tabSize;
+      } else {
+        if (!/\s/u.test(char) && column < limit) {
+          const dotColumn = Math.floor(column / perDot);
+          const cell = Math.floor(dotColumn / 2);
+          cells[cell] |= DOT[dotColumn % 2][y];
+          const span = highlightAt(highlights, line.startByte + localByte);
+          if (span) {
+            const key = colorKey(span.color);
+            const held = counts[cell].get(key);
+            counts[cell].set(key, {
+              color: span.color,
+              count: (held?.count ?? 0) + 1,
+            });
+          }
+        }
+        column++;
+      }
+      localByte += size;
+      if (column >= limit) break;
+    }
+  }
+
+  const colors: ColorRun[] = [];
+  for (let cell = 0; cell < width; cell++) {
+    let best: { key: string; color: Rgb; count: number } | null = null;
+    for (const [key, value] of counts[cell]) {
+      if (
+        !best || value.count > best.count ||
+        (value.count === best.count && key < best.key)
+      ) {
+        best = { key, color: value.color, count: value.count };
+      }
+    }
+    if (!best) continue;
+    const previous = colors.at(-1);
+    if (
+      previous && previous.end === cell && colorKey(previous.color) === best.key
+    ) previous.end++;
+    else colors.push({ start: cell, end: cell + 1, color: best.color });
+  }
+
+  return {
+    text: cells.map((bits) => String.fromCodePoint(BRAILLE_BASE + bits)).join(
+      "",
+    ),
+    colors,
+  };
+}
+
+/** Keep the source viewport visible while the minimap moves through a long file. */
+export function layoutMinimap(
+  height: number,
+  lineCount: number,
+  topLine: number,
+  bottomLine: number,
+): MinimapLayout {
+  const panelHeight = Math.max(1, Math.floor(height));
+  const lines = Math.max(1, Math.floor(lineCount));
+  const top = Math.max(0, Math.min(Math.floor(topLine), lines - 1));
+  const bottom = Math.max(top, Math.min(Math.floor(bottomLine), lines - 1));
+  const rows = Math.ceil(lines / LINES_PER_ROW);
+  const absoluteViewTop = Math.floor(top / LINES_PER_ROW);
+  const absoluteViewBottom = Math.floor(bottom / LINES_PER_ROW);
+  let offset = 0;
+
+  if (rows > panelHeight) {
+    const maxOffset = rows - panelHeight;
+    const scrollable = lines - (bottom - top + 1);
+    if (scrollable > 0) {
+      const fraction = Math.max(0, Math.min(1, top / scrollable));
+      offset = Math.floor(fraction * maxOffset + 0.5);
+    }
+    if (absoluteViewBottom >= offset + panelHeight) {
+      offset = absoluteViewBottom - panelHeight + 1;
+    }
+    if (absoluteViewTop < offset) offset = absoluteViewTop;
+    offset = Math.max(0, Math.min(offset, maxOffset));
+  }
+
+  return {
+    rows,
+    offset,
+    viewTop: absoluteViewTop - offset,
+    viewBottom: Math.min(absoluteViewBottom - offset, panelHeight - 1),
+  };
+}
+
+export function visibleRows(
+  lines: readonly SourceLine[],
+  layout: MinimapLayout,
+  height: number,
+  width: number,
+  columnsPerDot: number,
+  highlights: readonly HighlightSpan[] = [],
+): MinimapRow[] {
+  const result: MinimapRow[] = [];
+  const count = Math.min(
+    Math.max(1, Math.floor(height)),
+    layout.rows - layout.offset,
+  );
+  for (let row = 0; row < count; row++) {
+    const line = (layout.offset + row) * LINES_PER_ROW;
+    const encoded = encodeBraille(
+      lines.slice(line, line + LINES_PER_ROW),
+      width,
+      columnsPerDot,
+      4,
+      highlights,
+    );
+    result.push({ line, ...encoded });
+  }
+  return result;
+}
+
+function linearChannel(value: number): number {
+  const channel = Math.max(0, Math.min(255, value)) / 255;
+  return channel <= 0.04045
+    ? channel / 12.92
+    : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+export function contrastRatio(a: Rgb, b: Rgb): number {
+  const luminance = (color: Rgb) =>
+    0.2126 * linearChannel(color[0]) + 0.7152 * linearChannel(color[1]) +
+    0.0722 * linearChannel(color[2]);
+  const first = luminance(a);
+  const second = luminance(b);
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+
+/** Raise low contrast without changing a readable syntax color. */
+export function ensureContrast(
+  foreground: Rgb,
+  background: Rgb,
+  minimum = 3,
+): Rgb {
+  if (contrastRatio(foreground, background) >= minimum) return foreground;
+  const black: Rgb = [0, 0, 0];
+  const white: Rgb = [255, 255, 255];
+  const target =
+    contrastRatio(black, background) > contrastRatio(white, background)
+      ? black
+      : white;
+  for (let step = 1; step <= 20; step++) {
+    const amount = step / 20;
+    const candidate: Rgb = foreground.map((value, index) =>
+      Math.round(value + (target[index] - value) * amount)
+    ) as Rgb;
+    if (contrastRatio(candidate, background) >= minimum) return candidate;
+  }
+  return target;
 }
