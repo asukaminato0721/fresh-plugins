@@ -5,11 +5,11 @@ plugin APIs available on Fresh main. It requires no editor changes.
 
 ## Install
 
-After this package merges, open the command palette with `Ctrl+P`. Run
+Open the command palette with `Ctrl+P`. Run
 **Package: Install from URL**. Enter:
 
 ```
-https://github.com/sinelaw/fresh-plugins#dap
+https://github.com/asukaminato0721/fresh-plugins#dap
 ```
 
 For a local checkout, enter the absolute path to its `dap` directory instead.
@@ -54,7 +54,31 @@ package settings:
 }
 ```
 
-In Fresh's `config.json`, these settings belong under `plugins.dap.settings`.
+In Fresh's `config.json`, these settings belong under `plugins.dap.settings`:
+
+```json
+{
+  "plugins": {
+    "dap": {
+      "enabled": true,
+      "settings": {
+        "adapters": [
+          {
+            "type": "python",
+            "command": "python3",
+            "args": ["-m", "debugpy.adapter"]
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+If you save these settings in another file, start Fresh with
+`fresh --config /path/to/fresh.json`. Fresh must load the adapter settings
+before you run **Debug: Start**.
+
 For CodeLLDB, use an adapter entry with `"type": "lldb"` and
 `"command": "/path/to/codelldb"`. The launch configuration must use the same
 `type`.

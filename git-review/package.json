@@ -4,9 +4,9 @@
   "version": "1.2.0",
   "description": "Review working changes and commits in an expandable Git tree",
   "type": "plugin",
-  "author": "Fresh Editor contributors",
+  "author": "asukaminato0721",
   "license": "MIT",
-  "repository": "https://github.com/sinelaw/fresh-plugins",
+  "repository": "https://github.com/asukaminato0721/fresh-plugins#git-review",
   "keywords": ["git", "review", "commits", "diff"],
   "fresh": {
     "min_version": "0.5.2",

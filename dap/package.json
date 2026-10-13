@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "description": "Debug Adapter Protocol client with breakpoints, variables, and stepping",
   "type": "plugin",
-  "author": "Fresh Editor contributors",
+  "author": "asukaminato0721",
   "license": "MIT",
-  "repository": "https://github.com/sinelaw/fresh-plugins",
+  "repository": "https://github.com/asukaminato0721/fresh-plugins#dap",
   "keywords": [
     "debug",
     "dap",
@@ -14,6 +14,7 @@
     "debugger"
   ],
   "fresh": {
+    "min_version": "0.5.3",
     "min_api_version": 2,
     "entry": "dap.ts",
     "config_schema": {

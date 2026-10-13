@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "description": "A clickable code minimap in the Fresh sidebar",
   "type": "plugin",
-  "author": "Fresh Editor contributors",
+  "author": "asukaminato0721",
   "license": "MIT",
-  "repository": "https://github.com/sinelaw/fresh-plugins",
+  "repository": "https://github.com/asukaminato0721/fresh-plugins#minimap",
   "keywords": ["minimap", "navigation", "sidebar"],
   "fresh": {
     "min_version": "0.5.2",
