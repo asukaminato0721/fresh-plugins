@@ -119,6 +119,10 @@ private directories. Session cleanup removes them and terminates the adapter.
 The bridge also detects editor shutdown and an expired heartbeat. No duplex
 process API or editor patch is required.
 
+On POSIX systems, the adapter starts in a separate session without a controlling
+terminal. This prevents adapters such as debugpy from moving terminal input away
+from Fresh when they start the debugged program.
+
 The client design references
 [Fresh PR #2722](https://github.com/sinelaw/fresh/pull/2722). Its transport is
 separate from that PR's editor changes.

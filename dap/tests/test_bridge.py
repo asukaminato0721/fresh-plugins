@@ -87,6 +87,75 @@ class BridgeTests(unittest.TestCase):
                 process.stdout.close()
                 process.stderr.close()
 
+    @unittest.skipUnless(os.name == "posix", "Controlling terminals are POSIX-only")
+    def test_adapter_cannot_take_editors_controlling_terminal(self):
+        import pty
+
+        with tempfile.TemporaryDirectory() as root:
+            mailbox = Path(subprocess.check_output(
+                [sys.executable, str(BRIDGE), "prepare"], text=True).strip())
+            result = Path(root) / "terminal.json"
+            adapter = Path(root) / "terminal_adapter.py"
+            adapter.write_text('''import json, os, signal, sys, time
+from pathlib import Path
+has_terminal = False
+try:
+    tty = os.open("/dev/tty", os.O_RDWR)
+except OSError:
+    pass
+else:
+    has_terminal = True
+    os.setpgrp()
+    signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+    os.tcsetpgrp(tty, os.getpgrp())
+    os.close(tty)
+result = Path(sys.argv[1])
+temporary = result.with_suffix(".tmp")
+temporary.write_text(json.dumps({"has_terminal": has_terminal, "sid": os.getsid(0)}))
+temporary.replace(result)
+time.sleep(60)
+''')
+            controller = Path(root) / "controller.py"
+            controller.write_text('''import fcntl, json, os, subprocess, sys, termios, time
+tty = int(sys.argv[1])
+os.setsid()
+fcntl.ioctl(tty, termios.TIOCSCTTY, 0)
+foreground = os.tcgetpgrp(tty)
+process = subprocess.Popen(sys.argv[3:])
+try:
+    deadline = time.monotonic() + 5
+    while not os.path.exists(sys.argv[2]):
+        if time.monotonic() > deadline:
+            raise RuntimeError("Adapter did not report its terminal state")
+        time.sleep(0.02)
+    with open(sys.argv[2]) as source:
+        result = json.load(source)
+    result["controller_sid"] = os.getsid(0)
+    result["foreground_unchanged"] = os.tcgetpgrp(tty) == foreground
+    with open(sys.argv[2], "w") as output:
+        json.dump(result, output)
+finally:
+    with open(os.path.join(sys.argv[6], "stop"), "w") as output:
+        output.write("stop")
+    process.wait(timeout=5)
+''')
+            master, slave = pty.openpty()
+            try:
+                subprocess.run(
+                    [sys.executable, str(controller), str(slave), str(result),
+                     sys.executable, str(BRIDGE), "serve", str(mailbox),
+                     json.dumps([sys.executable, str(adapter), str(result)]), root],
+                    pass_fds=(slave,), stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=True, timeout=10)
+                observed = json.loads(result.read_text())
+                self.assertFalse(observed["has_terminal"])
+                self.assertTrue(observed["foreground_unchanged"])
+                self.assertNotEqual(observed["sid"], observed["controller_sid"])
+                self.assertFalse(mailbox.exists())
+            finally:
+                os.close(master)
+                os.close(slave)
+
     @staticmethod
     def alive(pid):
         try:

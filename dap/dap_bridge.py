@@ -62,6 +62,10 @@ def worker(mailbox: Path, command: list[str], cwd: str) -> int:
             bufsize=0,
             # Keep diagnostic output separate from protocol messages.
             stderr=sys.stderr,
+            # Adapters such as debugpy can change their session's foreground
+            # process group through /dev/tty. They must not share Fresh's
+            # controlling terminal, even when all standard streams are pipes.
+            start_new_session=(os.name == "posix"),
         )
 
         def read_output():
