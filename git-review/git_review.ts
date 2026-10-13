@@ -414,6 +414,7 @@ async function openFileDiff(commit: Commit, file: ChangedFile): Promise<void> {
     oldBufferId: oldBuffer.bufferId,
     newBufferId: newBuffer.bufferId,
   };
+  editor.showBuffer(compositeId);
   closeDiff(previous);
   editor.flushLayout();
   editor.setStatus(`${file.status} ${file.path} · n/p: next/previous change`);
